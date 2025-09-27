@@ -1,5 +1,4 @@
 // app/api/voice/route.js
-import { CartesiaClient } from "@cartesia/cartesia-js";
 import { NextResponse } from "next/server";
 
 export async function POST(request) {
@@ -10,29 +9,47 @@ export async function POST(request) {
             return NextResponse.json({ error: "Text is required" }, { status: 400 });
         }
 
-        const cartesia = new CartesiaClient({
-            apiKey: process.env.CARTESIA_API_KEY, // Accessing the API key from .env.local
-        });
-
-        // A simple voice ID. Find more on Cartesia's documentation.
-        // This example uses a pre-existing voice.
-        const voiceId = "a0e99841-5362-4b8a-8534-586b25e79916"; 
-
-        const audio = await cartesia.tts.create({
-            model_id: "sonic-english",
-            transcript: text,
-            voice_id: voiceId,
-        });
-
-// Send the audio data back to the client
-        return new NextResponse(audio.body, {
+        // Use direct API call - most reliable approach
+        const response = await fetch('https://api.cartesia.ai/tts/bytes', {
+            method: 'POST',
             headers: {
-                'Content-Type': 'audio/mpeg',
+                'Authorization': `Bearer ${process.env.CARTESIA_API_KEY}`,
+                'Content-Type': 'application/json',
+                'Cartesia-Version': '2024-06-10',
+            },
+            body: JSON.stringify({
+                model_id: "sonic-english",
+                transcript: text,
+                voice: {
+                    mode: "id",
+                    id: "a0e99841-438c-4a64-b679-ae501e7d6091", // Updated voice ID from docs
+                },
+                output_format: {
+                    container: "wav",
+                    encoding: "pcm_f32le",
+                    sample_rate: 44100,
+                },
+            }),
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error("Cartesia API Error Response:", errorText);
+            throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+        }
+
+        const audioBuffer = await response.arrayBuffer();
+        return new NextResponse(audioBuffer, {
+            headers: {
+                'Content-Type': 'audio/wav',
             },
         });
 
     } catch (error) {
         console.error("Cartesia API Error:", error);
-        return NextResponse.json({ error: "Failed to generate audio" }, { status: 500 });
+        return NextResponse.json({ 
+            error: "Failed to generate audio", 
+            details: error.message 
+        }, { status: 500 });
     }
 }
